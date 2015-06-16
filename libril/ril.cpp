@@ -282,6 +282,8 @@ static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseDataRegistrationState(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
+static int responseStringsNetworks(Parcel &p, void *response, size_t responselen);
+static int responseStrings(Parcel &p, void *response, size_t responselen, bool network_search);
 static int responseString(Parcel &p, void *response, size_t responselen);
 static int responseVoid(Parcel &p, void *response, size_t responselen);
 static int responseCallList(Parcel &p, void *response, size_t responselen);
@@ -674,6 +676,7 @@ dispatchNetworkManual (Parcel& p, RequestInfo *pRI) {
     status_t status;
     size_t datalen;
     char **pStrings;
+    char *operatorNumericLoc;
 
     datalen = sizeof(char *) * 2;
 
@@ -681,6 +684,14 @@ dispatchNetworkManual (Parcel& p, RequestInfo *pRI) {
     pStrings = (char **)alloca(datalen);
 
     pStrings[0] = strdupReadString(p);
+
+#ifdef RIL_APPEND_RAT_TO_PLMN
+    // Cut off RAT
+    operatorNumericLoc = strchr(pStrings[0], '+');
+    if (operatorNumericLoc != NULL)
+        *operatorNumericLoc = 0;
+#endif
+
     appendPrintBuf("%s%s,", printBuf, pStrings[0]);
     pStrings[1] = NULL;
     closeRequest;
@@ -2268,6 +2279,15 @@ static int responseDataRegistrationState(Parcel &p, void *response, size_t respo
 
 /** response is a char **, pointing to an array of char *'s */
 static int responseStrings(Parcel &p, void *response, size_t responselen) {
+    return responseStrings(p, response, responselen, false);
+}
+
+static int responseStringsNetworks(Parcel &p, void *response, size_t responselen) {
+    return responseStrings(p, response, responselen, true);
+}
+
+/** response is a char **, pointing to an array of char *'s */
+static int responseStrings(Parcel &p, void *response, size_t responselen, bool network_search) {
     int numStrings;
 
     if (response == NULL && responselen != 0) {
@@ -2291,8 +2311,31 @@ static int responseStrings(Parcel &p, void *response, size_t responselen) {
         /* each string*/
         startResponse;
         for (int i = 0 ; i < numStrings ; i++) {
+#ifdef RIL_APPEND_RAT_TO_PLMN
+            if (network_search == true && (i + 1) % 5 == 3) {
+                RLOGV("Appending 5th network mode string to 3rd");
+
+                char buffer[16]; //PLMN+RAT, shouldn't be longer than 16
+                int network_mode;
+                network_mode = RADIO_TECH_UNKNOWN;
+                if (strcmp(p_cur[i + 2], "gsm") == 0)
+                    network_mode = RADIO_TECH_GSM;
+                else if (strcmp(p_cur[i + 2], "wcdma") == 0)
+                    network_mode = RADIO_TECH_UMTS;
+                else if (strcmp(p_cur[i + 2], "lte") == 0)
+                    network_mode = RADIO_TECH_LTE;
+                sprintf(buffer, "%s+%d", (char*)p_cur[i], network_mode);
+
+                appendPrintBuf("%s%s,", printBuf, buffer);
+                writeStringToParcel (p, buffer);
+            } else {
+                appendPrintBuf("%s%s,", printBuf, (char*)p_cur[i]);
+                writeStringToParcel (p, p_cur[i]);
+            }
+#else
             appendPrintBuf("%s%s,", printBuf, (char*)p_cur[i]);
             writeStringToParcel (p, p_cur[i]);
+#endif
         }
         removeLastChar;
         closeResponse;

@@ -67,3 +67,4 @@ BOARD_USES_QCOM_HARDWARE := true
 # RIL
 BOARD_PROVIDES_LIBRIL := true
 BOARD_RIL_CLASS := ../../../device/sony/msm8960-common/ril/
+BOARD_USES_RIL_APPEND_RAT_TO_PLMN := true
